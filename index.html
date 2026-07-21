@@ -1,0 +1,516 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Control de Rifa</title>
+<meta name="theme-color" content="#0A0A0A">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black">
+<meta name="apple-mobile-web-app-title" content="Sorteo MFT">
+<link id="faviconLink" rel="icon" type="image/png" href="">
+<link id="appleIconLink" rel="apple-touch-icon" href="">
+<link id="manifestLink" rel="manifest" href="">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Space+Mono:wght@400;700&family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+<style>
+  :root{
+    --black:#0A0A0A;
+    --black-soft:#161616;
+    --red:#D0102A;
+    --red-light:#FF3B4E;
+    --white:#FFFFFF;
+    --off-white:#F4F4F4;
+    --ink:#141414;
+    --line: rgba(0,0,0,0.15);
+  }
+  *{box-sizing:border-box;}
+  body{
+    margin:0;
+    background:var(--black);
+    background-image:
+      radial-gradient(circle at 20% 10%, rgba(208,16,42,0.10), transparent 40%),
+      radial-gradient(circle at 80% 80%, rgba(208,16,42,0.08), transparent 40%);
+    font-family:'Inter',sans-serif;
+    color:var(--white);
+    min-height:100vh;
+    padding:24px 16px 60px;
+  }
+  .wrap{max-width:720px;margin:0 auto;}
+  header{text-align:center;margin-bottom:28px;}
+  .eyebrow{
+    font-family:'Space Mono',monospace;
+    letter-spacing:0.25em;
+    font-size:11px;
+    color:var(--red-light);
+    text-transform:uppercase;
+    margin-bottom:8px;
+  }
+  h1{
+    font-family:'Space Mono',monospace;
+    font-size:20px;
+    line-height:1.3;
+    margin:0 0 6px;
+    color:var(--white);
+    font-weight:400;
+  }
+  h1 .brand{
+    display:inline-block;
+    font-size:34px;
+    font-weight:700;
+    color:var(--red-light);
+    letter-spacing:0.01em;
+    margin-top:4px;
+  }
+  .sub{color:rgba(255,255,255,0.65);font-size:14px;}
+  .stats{
+    display:flex;
+    gap:10px;
+    justify-content:center;
+    margin-top:18px;
+    flex-wrap:wrap;
+  }
+  .stat{
+    background:rgba(208,16,42,0.12);
+    border:1px solid rgba(208,16,42,0.4);
+    border-radius:8px;
+    padding:10px 16px;
+    text-align:center;
+    min-width:110px;
+  }
+  .stat .num{font-family:'Space Mono',monospace;font-size:22px;color:var(--red-light);}
+  .stat .label{font-size:11px;color:rgba(255,255,255,0.6);text-transform:uppercase;letter-spacing:0.05em;}
+
+  .card{
+    background:var(--white);
+    color:var(--ink);
+    border-radius:12px;
+    padding:22px;
+    margin-bottom:20px;
+    box-shadow:0 12px 30px rgba(0,0,0,0.45);
+  }
+  .card h2{
+    font-family:'Space Mono',monospace;
+    font-size:15px;
+    text-transform:uppercase;
+    letter-spacing:0.08em;
+    margin:0 0 16px;
+    display:flex;
+    align-items:center;
+    gap:8px;
+  }
+  .card h2::before{
+    content:'';
+    width:8px;height:8px;
+    background:var(--red);
+    border-radius:50%;
+    display:inline-block;
+  }
+  form{display:flex;flex-direction:column;gap:12px;}
+  label{font-size:12px;font-weight:600;color:rgba(20,20,20,0.7);margin-bottom:4px;display:block;}
+  input, select{
+    width:100%;
+    padding:11px 12px;
+    border:1.5px solid var(--line);
+    border-radius:8px;
+    font-family:'Inter',sans-serif;
+    font-size:15px;
+    background:#fff;
+    color:var(--ink);
+  }
+  input:focus, select:focus{outline:none;border-color:var(--red);}
+  .btn{
+    font-family:'Space Mono',monospace;
+    font-size:14px;
+    letter-spacing:0.04em;
+    padding:13px 18px;
+    border-radius:8px;
+    border:none;
+    cursor:pointer;
+    text-transform:uppercase;
+    transition:transform 0.08s ease, opacity 0.15s ease;
+  }
+  .btn:active{transform:scale(0.98);}
+  .btn-primary{background:var(--black);color:var(--white);}
+  .btn-primary:hover{background:var(--black-soft);}
+  .btn-red{background:var(--red);color:var(--white);}
+  .btn-red:hover{background:var(--red-light);}
+  .btn-ghost{background:transparent;color:var(--red);border:1.5px solid var(--red);}
+  .btn-ghost:hover{background:rgba(208,16,42,0.08);}
+  .btn:disabled{
+    opacity:0.4;
+    cursor:not-allowed;
+    background:#ccc;
+    color:#777;
+    border-color:#ccc;
+  }
+  .row{display:flex;gap:10px;}
+  .row > *{flex:1;}
+
+  .search{margin-bottom:14px;}
+
+  .ticket{
+    display:flex;
+    align-items:center;
+    background:#fff;
+    border:1.5px dashed var(--line);
+    border-radius:8px;
+    padding:12px 14px;
+    margin-bottom:8px;
+    gap:12px;
+  }
+  .ticket .num{
+    font-family:'Space Mono',monospace;
+    font-weight:700;
+    font-size:18px;
+    color:var(--red);
+    min-width:56px;
+  }
+  .ticket .info{flex:1;min-width:0;}
+  .ticket .name{font-weight:600;font-size:14px;}
+  .ticket .meta{font-size:12px;color:rgba(20,20,20,0.55);}
+
+  .empty{
+    text-align:center;
+    padding:30px 10px;
+    color:rgba(20,20,20,0.45);
+    font-size:14px;
+  }
+
+  .lock-msg{
+    font-size:13px;
+    color:rgba(20,20,20,0.6);
+    background:var(--off-white);
+    border:1px dashed var(--line);
+    border-radius:8px;
+    padding:12px;
+    margin-top:12px;
+    text-align:center;
+  }
+  .lock-msg strong{color:var(--red);}
+
+  .modal-bg{
+    display:none;
+    position:fixed;inset:0;
+    background:rgba(10,10,10,0.88);
+    align-items:center;justify-content:center;
+    z-index:50;
+    padding:20px;
+  }
+  .modal-bg.show{display:flex;}
+  .modal{
+    background:var(--white);
+    color:var(--ink);
+    border-radius:14px;
+    padding:32px 24px;
+    text-align:center;
+    max-width:340px;
+    width:100%;
+    box-shadow:0 20px 50px rgba(0,0,0,0.6);
+    border-top:6px solid var(--red);
+  }
+  .modal .eyebrow{color:var(--red);}
+  .modal .winner-num{
+    font-family:'Space Mono',monospace;
+    font-size:48px;
+    font-weight:700;
+    color:var(--black);
+    margin:10px 0;
+  }
+  .modal .winner-name{font-size:18px;font-weight:600;margin-bottom:4px;}
+  .modal .winner-meta{font-size:13px;color:rgba(20,20,20,0.6);margin-bottom:20px;}
+
+  #toast{
+    position:fixed;bottom:20px;left:50%;transform:translateX(-50%) translateY(20px);
+    background:var(--black-soft);color:var(--white);
+    border:1px solid var(--red);
+    padding:11px 18px;border-radius:8px;font-size:13px;
+    opacity:0;transition:all 0.25s ease;pointer-events:none;
+    font-family:'Space Mono',monospace;
+    z-index:60;
+    box-shadow:0 8px 20px rgba(0,0,0,0.4);
+    max-width:90vw;
+    text-align:center;
+  }
+  #toast.show{opacity:1;transform:translateX(-50%) translateY(0);}
+
+  .btn[data-loading="1"]{opacity:0.6;pointer-events:none;}
+</style>
+</head>
+<body>
+<div class="wrap">
+  <header>
+    <div class="eyebrow">Control interno &middot; no público</div>
+    <h1>SORTEO ANIVERSARIO<br><span class="brand">MADAFAKER'S TEAM</span></h1>
+    <div class="sub">Cada compra = un número nuevo. Sorteo el 23 de agosto, 8:00 p.m.</div>
+    <div class="stats">
+      <div class="stat"><div class="num" id="statTotal">0</div><div class="label">Números dados</div></div>
+      <div class="stat"><div class="num" id="statPersonas">0</div><div class="label">Números hoy</div></div>
+      <div class="stat"><div class="num" id="statDias">--</div><div class="label">Días para el sorteo</div></div>
+    </div>
+  </header>
+
+  <div class="card">
+    <h2>Registrar número</h2>
+    <form id="entryForm">
+      <div>
+        <label for="fName">Nombre de usuario</label>
+        <input type="text" id="fName" required placeholder="Ej: María Gómez">
+      </div>
+      <div>
+        <label for="fStaff">Nombre de agente</label>
+        <input type="text" id="fStaff" required placeholder="Nombre de quien entrega el número">
+      </div>
+      <button type="submit" class="btn btn-red" id="submitBtn">Asignar siguiente número</button>
+    </form>
+  </div>
+
+  <div class="card">
+    <h2>Números entregados</h2>
+    <input type="text" class="search" id="searchBox" placeholder="Buscar por nombre o número...">
+    <div id="ticketList"></div>
+  </div>
+
+  <div class="card">
+    <h2>Sorteo</h2>
+    <p style="font-size:13px;color:rgba(20,20,20,0.6);margin-top:-6px;">
+      El sorteo y la exportación de datos se habilitan automáticamente el 23 de agosto a las 8:00 p.m., cuando cierra el conteo.
+    </p>
+    <div class="row">
+      <button class="btn btn-primary" id="drawBtn">Realizar sorteo</button>
+      <button class="btn btn-ghost" id="exportBtn">Exportar CSV</button>
+    </div>
+    <div class="lock-msg" id="lockMsg"></div>
+  </div>
+</div>
+
+<div class="modal-bg" id="modalBg">
+  <div class="modal">
+    <div class="eyebrow">🎉 Número ganador</div>
+    <div class="winner-num" id="winnerNum">--</div>
+    <div class="winner-name" id="winnerName">--</div>
+    <div class="winner-meta" id="winnerMeta">--</div>
+    <button class="btn btn-primary" id="closeModal" style="width:100%;">Cerrar</button>
+  </div>
+</div>
+
+<div id="toast"></div>
+
+<script>
+// ============================================
+// CONFIGURACIÓN: pega acá tu URL de Apps Script
+// ============================================
+const SCRIPT_URL = 'https://script.google.com/macros/s/AKfycbyK9wRDDHR7NSSnIGqJKv0gm3TeAKthgFtOswgG5QPTY8-TenWhVPYbr34Ejv1F7Oo1yw/exec';
+
+let entries = [];
+const DRAW_TIME = new Date('2026-08-23T20:00:00');
+
+function setupHomeScreenIcon(){
+  const canvas = document.createElement('canvas');
+  canvas.width = 512;
+  canvas.height = 512;
+  const ctx = canvas.getContext('2d');
+
+  ctx.fillStyle = '#0A0A0A';
+  ctx.fillRect(0, 0, 512, 512);
+
+  ctx.beginPath();
+  ctx.arc(256, 256, 190, 0, Math.PI * 2);
+  ctx.fillStyle = '#D0102A';
+  ctx.fill();
+
+  ctx.beginPath();
+  ctx.arc(256, 256, 160, 0, Math.PI * 2);
+  ctx.fillStyle = '#0A0A0A';
+  ctx.fill();
+
+  ctx.fillStyle = '#FFFFFF';
+  ctx.font = '900 220px Arial, sans-serif';
+  ctx.textAlign = 'center';
+  ctx.textBaseline = 'middle';
+  ctx.fillText('M', 256, 278);
+
+  const dataUrl = canvas.toDataURL('image/png');
+
+  document.getElementById('faviconLink').href = dataUrl;
+  document.getElementById('appleIconLink').href = dataUrl;
+
+  const manifest = {
+    name: "Sorteo Aniversario Madafaker's Team",
+    short_name: "Sorteo MFT",
+    start_url: ".",
+    display: "standalone",
+    background_color: "#0A0A0A",
+    theme_color: "#0A0A0A",
+    icons: [
+      { src: dataUrl, sizes: "512x512", type: "image/png" },
+      { src: dataUrl, sizes: "192x192", type: "image/png" }
+    ]
+  };
+  const manifestBlob = new Blob([JSON.stringify(manifest)], {type: 'application/manifest+json'});
+  document.getElementById('manifestLink').href = URL.createObjectURL(manifestBlob);
+}
+setupHomeScreenIcon();
+
+function toast(msg){
+  const t = document.getElementById('toast');
+  t.textContent = msg;
+  t.classList.add('show');
+  setTimeout(()=>t.classList.remove('show'), 3500);
+}
+
+async function loadEntries(){
+  try{
+    const res = await fetch(SCRIPT_URL + '?action=list');
+    const data = await res.json();
+    entries = data.map(e => ({...e, numero: Number(e.numero)}));
+    render();
+  }catch(e){
+    console.error('Error al leer:', e);
+    toast('No se pudo actualizar la lista, reintentando...');
+  }
+}
+
+setInterval(async ()=>{
+  const q = document.getElementById('searchBox');
+  if(document.activeElement === q) return;
+  await loadEntries();
+}, 5000);
+
+setInterval(updateLockStatus, 30000);
+
+function pad(n){ return String(n).padStart(4,'0'); }
+
+function updateLockStatus(){
+  const now = new Date();
+  const drawBtn = document.getElementById('drawBtn');
+  const exportBtn = document.getElementById('exportBtn');
+  const lockMsg = document.getElementById('lockMsg');
+
+  if(now < DRAW_TIME){
+    drawBtn.disabled = true;
+    exportBtn.disabled = true;
+    lockMsg.innerHTML = 'Se habilita el <strong>23 de agosto a las 8:00 p.m.</strong>, cuando cierra el conteo.';
+  } else {
+    drawBtn.disabled = false;
+    exportBtn.disabled = false;
+    lockMsg.innerHTML = '<strong>El conteo cerró.</strong> Ya puedes realizar el sorteo y exportar los datos.';
+  }
+}
+
+function render(){
+  const q = document.getElementById('searchBox').value.trim().toLowerCase();
+  const list = document.getElementById('ticketList');
+  const filtered = entries.filter(e =>
+    !q || (e.nombre||'').toLowerCase().includes(q) || pad(e.numero).includes(q)
+  ).sort((a,b)=>b.numero-a.numero);
+
+  if(filtered.length === 0){
+    list.innerHTML = '<div class="empty">Todavía no hay números registrados. Agrega el primero arriba.</div>';
+  } else {
+    list.innerHTML = filtered.map(e => `
+      <div class="ticket">
+        <div class="num">#${pad(e.numero)}</div>
+        <div class="info">
+          <div class="name">${escapeHtml(e.nombre)}</div>
+          <div class="meta">agente: ${escapeHtml(e.agente || '—')} · ${e.fecha} ${e.hora}</div>
+        </div>
+      </div>
+    `).join('');
+  }
+
+  document.getElementById('statTotal').textContent = entries.length;
+  const today = new Date().toLocaleDateString('es-DO');
+  const todayCount = entries.filter(e=>e.fecha===today).length;
+  document.getElementById('statPersonas').textContent = todayCount;
+
+  const now = new Date();
+  const days = Math.max(0, Math.ceil((DRAW_TIME-now)/(1000*60*60*24)));
+  document.getElementById('statDias').textContent = days;
+
+  updateLockStatus();
+}
+
+function escapeHtml(str){
+  const div = document.createElement('div');
+  div.textContent = str || '';
+  return div.innerHTML;
+}
+
+document.getElementById('entryForm').addEventListener('submit', async (ev)=>{
+  ev.preventDefault();
+  const name = document.getElementById('fName').value.trim();
+  const staff = document.getElementById('fStaff').value.trim();
+  if(!name || !staff) return;
+
+  const btn = document.getElementById('submitBtn');
+  btn.setAttribute('data-loading','1');
+  btn.textContent = 'Guardando...';
+
+  try{
+    const params = new URLSearchParams({ action: 'add', nombre: name, agente: staff });
+    const res = await fetch(SCRIPT_URL + '?' + params.toString());
+    const nuevo = await res.json();
+
+    if(nuevo.error){
+      toast('Error: ' + nuevo.error);
+    } else {
+      toast('Número #' + pad(nuevo.numero) + ' asignado a ' + name);
+      document.getElementById('entryForm').reset();
+      document.getElementById('fName').focus();
+      await loadEntries();
+    }
+  }catch(e){
+    console.error('Error al guardar:', e);
+    toast('Error al guardar: ' + (e.message || 'sin conexión'));
+  }finally{
+    btn.removeAttribute('data-loading');
+    btn.textContent = 'Asignar siguiente número';
+  }
+});
+
+document.getElementById('searchBox').addEventListener('input', render);
+
+document.getElementById('drawBtn').addEventListener('click', ()=>{
+  if(new Date() < DRAW_TIME) return;
+  if(entries.length === 0){
+    toast('Todavía no hay números para sortear');
+    return;
+  }
+  const winner = entries[Math.floor(Math.random()*entries.length)];
+  document.getElementById('winnerNum').textContent = '#' + pad(winner.numero);
+  document.getElementById('winnerName').textContent = winner.nombre;
+  document.getElementById('winnerMeta').textContent = 'agente: ' + winner.agente + ' · ' + winner.fecha + ' ' + winner.hora;
+  document.getElementById('modalBg').classList.add('show');
+});
+
+document.getElementById('closeModal').addEventListener('click', ()=>{
+  document.getElementById('modalBg').classList.remove('show');
+});
+
+document.getElementById('exportBtn').addEventListener('click', ()=>{
+  if(new Date() < DRAW_TIME) return;
+  if(entries.length === 0){
+    toast('No hay datos para exportar');
+    return;
+  }
+  const header = 'Numero,Nombre,Agente,Fecha,Hora\n';
+  const rows = entries
+    .sort((a,b)=>a.numero-b.numero)
+    .map(e => [pad(e.numero), e.nombre, e.agente, e.fecha, e.hora]
+      .map(v => `"${(v||'').toString().replace(/"/g,'""')}"`).join(','))
+    .join('\n');
+  const blob = new Blob([header+rows], {type:'text/csv;charset=utf-8;'});
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url;
+  a.download = 'rifa_numeros.csv';
+  a.click();
+  URL.revokeObjectURL(url);
+  toast('CSV descargado');
+});
+
+loadEntries();
+</script>
+</body>
+</html>
