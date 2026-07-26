@@ -436,11 +436,11 @@ function render(){
   const q = document.getElementById('searchBox').value.trim().toLowerCase();
   const list = document.getElementById('ticketList');
   const allMatches = entries.filter(e =>
-    !q || (e.nombre||'').toLowerCase().includes(q) || (e.agente||'').toLowerCase().includes(q) || pad(e.numero).includes(q)
+    !q || String(e.nombre||'').toLowerCase().includes(q) || String(e.agente||'').toLowerCase().includes(q) || pad(e.numero).includes(q)
   ).sort((a,b)=>b.numero-a.numero);
 
   // Limita cuántas tarjetas se dibujan a la vez para que no se vuelva lento con miles de registros
-  const LIMITE = q ? 100 : 50;
+  const LIMITE = 30;
   const filtered = allMatches.slice(0, LIMITE);
   const hayMas = allMatches.length > LIMITE;
 
@@ -453,8 +453,8 @@ function render(){
       <div class="ticket">
         <div class="num">#${pad(e.numero)}</div>
         <div class="info">
-          <div class="name">${escapeHtml(e.nombre)}</div>
-          <div class="meta">agente: ${escapeHtml(e.agente || '—')} · ${e.fecha} ${e.hora}</div>
+          <div class="name">${escapeHtml(String(e.nombre))}</div>
+          <div class="meta">agente: ${escapeHtml(String(e.agente || '—'))} · ${e.fecha} ${e.hora}</div>
         </div>
       </div>
     `).join('') + (hayMas ? `<div class="empty" style="padding:14px 10px;">Mostrando ${LIMITE} de ${allMatches.length} coincidencias. Escribe más letras para acotar la búsqueda.</div>` : '');
