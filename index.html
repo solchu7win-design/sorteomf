@@ -272,6 +272,12 @@
   </div>
 
   <div class="card">
+    <h2>Historial por día</h2>
+    <button class="btn btn-ghost" id="toggleHistorial" style="width:100%;margin-bottom:6px;">Ver cuántos números se dieron cada día</button>
+    <div id="historialList" style="display:none;"></div>
+  </div>
+
+  <div class="card">
     <h2>Sorteo</h2>
     <p style="font-size:13px;color:rgba(20,20,20,0.6);margin-top:-6px;">
       El sorteo y la exportación de datos se habilitan automáticamente el 23 de agosto a las 8:00 p.m., cuando cierra el conteo.
@@ -381,6 +387,34 @@ setInterval(updateLockStatus, 30000);
 
 function pad(n){ return String(n).padStart(4,'0'); }
 
+// Arma la fecha de "hoy" en el mismo formato dd/MM/yyyy que usa el script de Google (GMT-4),
+// para evitar el desfase que causaba que "números hoy" siempre marcara 0
+function fechaHoyServidor(){
+  const now = new Date();
+  const offsetMin = now.getTimezoneOffset(); // minutos respecto a UTC en el dispositivo
+  const gmt4Min = 4 * 60;
+  const ajustada = new Date(now.getTime() + (offsetMin - gmt4Min) * 60000);
+  const d = String(ajustada.getDate()).padStart(2,'0');
+  const m = String(ajustada.getMonth()+1).padStart(2,'0');
+  const y = ajustada.getFullYear();
+  return `${d}/${m}/${y}`;
+}
+
+// Agrupa todas las entradas por fecha para el historial por día
+function historialPorDia(){
+  const grupos = {};
+  entries.forEach(e=>{
+    grupos[e.fecha] = (grupos[e.fecha]||0) + 1;
+  });
+  return Object.entries(grupos)
+    .map(([fecha, cantidad]) => ({fecha, cantidad}))
+    .sort((a,b)=>{
+      const [da,ma,ya] = a.fecha.split('/').map(Number);
+      const [db,mb,yb] = b.fecha.split('/').map(Number);
+      return new Date(yb,mb-1,db) - new Date(ya,ma-1,da);
+    });
+}
+
 function updateLockStatus(){
   const now = new Date();
   const drawBtn = document.getElementById('drawBtn');
@@ -401,12 +435,19 @@ function updateLockStatus(){
 function render(){
   const q = document.getElementById('searchBox').value.trim().toLowerCase();
   const list = document.getElementById('ticketList');
-  const filtered = entries.filter(e =>
-    !q || (e.nombre||'').toLowerCase().includes(q) || pad(e.numero).includes(q)
+  const allMatches = entries.filter(e =>
+    !q || (e.nombre||'').toLowerCase().includes(q) || (e.agente||'').toLowerCase().includes(q) || pad(e.numero).includes(q)
   ).sort((a,b)=>b.numero-a.numero);
 
+  // Limita cuántas tarjetas se dibujan a la vez para que no se vuelva lento con miles de registros
+  const LIMITE = q ? 100 : 50;
+  const filtered = allMatches.slice(0, LIMITE);
+  const hayMas = allMatches.length > LIMITE;
+
   if(filtered.length === 0){
-    list.innerHTML = '<div class="empty">Todavía no hay números registrados. Agrega el primero arriba.</div>';
+    list.innerHTML = q
+      ? '<div class="empty">No se encontraron números que coincidan con "' + escapeHtml(q) + '".</div>'
+      : '<div class="empty">Todavía no hay números registrados. Agrega el primero arriba.</div>';
   } else {
     list.innerHTML = filtered.map(e => `
       <div class="ticket">
@@ -416,11 +457,11 @@ function render(){
           <div class="meta">agente: ${escapeHtml(e.agente || '—')} · ${e.fecha} ${e.hora}</div>
         </div>
       </div>
-    `).join('');
+    `).join('') + (hayMas ? `<div class="empty" style="padding:14px 10px;">Mostrando ${LIMITE} de ${allMatches.length} coincidencias. Escribe más letras para acotar la búsqueda.</div>` : '');
   }
 
   document.getElementById('statTotal').textContent = entries.length;
-  const today = new Date().toLocaleDateString('es-DO');
+  const today = fechaHoyServidor();
   const todayCount = entries.filter(e=>e.fecha===today).length;
   document.getElementById('statPersonas').textContent = todayCount;
 
@@ -469,7 +510,37 @@ document.getElementById('entryForm').addEventListener('submit', async (ev)=>{
   }
 });
 
-document.getElementById('searchBox').addEventListener('input', render);
+let searchDebounce;
+document.getElementById('searchBox').addEventListener('input', ()=>{
+  clearTimeout(searchDebounce);
+  searchDebounce = setTimeout(render, 200);
+});
+
+document.getElementById('toggleHistorial').addEventListener('click', ()=>{
+  const box = document.getElementById('historialList');
+  const btn = document.getElementById('toggleHistorial');
+  const abierto = box.style.display !== 'none';
+  if(abierto){
+    box.style.display = 'none';
+    btn.textContent = 'Ver cuántos números se dieron cada día';
+  } else {
+    const dias = historialPorDia();
+    if(dias.length === 0){
+      box.innerHTML = '<div class="empty">Todavía no hay datos.</div>';
+    } else {
+      box.innerHTML = dias.map(d => `
+        <div class="ticket">
+          <div class="num" style="min-width:auto;font-size:14px;">${escapeHtml(d.fecha)}</div>
+          <div class="info">
+            <div class="name">${d.cantidad} número${d.cantidad===1?'':'s'} entregado${d.cantidad===1?'':'s'}</div>
+          </div>
+        </div>
+      `).join('');
+    }
+    box.style.display = 'block';
+    btn.textContent = 'Ocultar historial';
+  }
+});
 
 document.getElementById('drawBtn').addEventListener('click', ()=>{
   if(new Date() < DRAW_TIME) return;
