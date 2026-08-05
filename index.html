@@ -600,4 +600,204 @@ document.getElementById('toggleHistorial').addEventListener('click', async ()=>{
 async function cargarDatosCompletos(){
   if(entriesFull) return entriesFull;
   toast('Cargando todos los números, puede tardar unos segundos...');
-  const res = awa
+  const res = await fetch(SCRIPT_URL + '?action=full');
+  const data = await res.json();
+  entriesFull = data.map(e => ({...e, numero: Number(e.numero)}));
+  return entriesFull;
+}
+
+// ============================================
+// SISTEMA DE SORTEO — 14 premios en orden
+// ============================================
+const PREMIOS = [
+  {orden: 1,  monto: 100000},
+  {orden: 2,  monto: 100000},
+  {orden: 3,  monto: 100000},
+  {orden: 4,  monto: 100000},
+  {orden: 5,  monto: 100000},
+  {orden: 6,  monto: 100000},
+  {orden: 7,  monto: 100000},
+  {orden: 8,  monto: 100000},
+  {orden: 9,  monto: 100000},
+  {orden: 10, monto: 100000},
+  {orden: 11, monto: 200000},
+  {orden: 12, monto: 300000},
+  {orden: 13, monto: 500000},
+  {orden: 14, monto: 1000000},
+];
+
+// Agentes que NO deben poder ganar (por ejemplo, ya no trabajan en el equipo).
+// Escribí el nombre exactamente como aparece en los registros. Podés agregar más separados por coma.
+const AGENTES_EXCLUIDOS = ['Guerreras'];
+
+// Cuántos premios como máximo puede entregar un mismo agente en total
+const LIMITE_PREMIOS_POR_AGENTE = 2;
+
+let ganadores = []; // { premio, numero, nombre, agente }
+
+function normalizar(texto){
+  return String(texto||'').trim().toLowerCase();
+}
+
+function formatoMonto(n){
+  return '$' + n.toLocaleString('es-DO');
+}
+
+function actualizarPanelPremios(){
+  const restantes = PREMIOS.length - ganadores.length;
+  const panel = document.getElementById('premioActual');
+  const drawBtn = document.getElementById('drawBtn');
+
+  if(restantes <= 0){
+    panel.textContent = 'Ya se sortearon los 14 premios.';
+    drawBtn.textContent = 'Sorteo completo';
+    drawBtn.disabled = true;
+  } else {
+    const siguiente = PREMIOS[ganadores.length];
+    panel.textContent = `Próximo: Ganador #${siguiente.orden} — ${formatoMonto(siguiente.monto)} (quedan ${restantes} por sortear)`;
+    if(new Date() >= DRAW_TIME){
+      drawBtn.textContent = 'Sortear Ganador #' + siguiente.orden + ' (' + formatoMonto(siguiente.monto) + ')';
+    }
+  }
+
+  const hist = document.getElementById('historialPremios');
+  if(ganadores.length === 0){
+    hist.innerHTML = '';
+  } else {
+    hist.innerHTML = '<div style="font-size:12px;font-weight:600;color:rgba(20,20,20,0.6);margin-bottom:6px;text-transform:uppercase;letter-spacing:0.05em;">Ganadores hasta ahora</div>' +
+      ganadores.map(g => `
+        <div class="ticket" style="display:block;">
+          <div style="font-family:'Space Mono',monospace;font-weight:700;color:var(--red);font-size:14px;margin-bottom:4px;">
+            GANADOR #${g.premio.orden} — ${formatoMonto(g.premio.monto)}
+          </div>
+          <div class="name">${escapeHtml(String(g.nombre))} · #${pad(g.numero)}</div>
+          <div class="meta">agente: ${escapeHtml(String(g.agente||'—'))}</div>
+        </div>
+      `).reverse().join('');
+  }
+}
+
+// Clave para poder sortear. Cambiala acá antes de la noche del sorteo.
+const CLAVE_SORTEO = 'MFT2026';
+let sorteoDesbloqueado = false;
+
+document.getElementById('drawBtn').addEventListener('click', async ()=>{
+  if(new Date() < DRAW_TIME) return;
+  if(ganadores.length >= PREMIOS.length) return;
+
+  if(!sorteoDesbloqueado){
+    const intento = prompt('Ingresá la clave para realizar el sorteo:');
+    if(intento === null) return;
+    if(intento !== CLAVE_SORTEO){
+      toast('Clave incorrecta');
+      return;
+    }
+    sorteoDesbloqueado = true;
+  }
+
+  const drawBtn = document.getElementById('drawBtn');
+  drawBtn.setAttribute('data-loading','1');
+  const textoOriginal = drawBtn.textContent;
+  if(!entriesFull) drawBtn.textContent = 'Cargando datos...';
+
+  let entries;
+  try{
+    entries = await cargarDatosCompletos();
+  }catch(e){
+    console.error('Error al cargar datos completos:', e);
+    toast('No se pudo cargar la lista completa, intentá de nuevo');
+    drawBtn.removeAttribute('data-loading');
+    drawBtn.textContent = textoOriginal;
+    return;
+  }
+  drawBtn.removeAttribute('data-loading');
+
+  const numerosGanadores = new Set(ganadores.map(g => g.numero));
+  const clientesGanadores = new Set(ganadores.map(g => normalizar(g.nombre)));
+  const premiosPorAgente = {};
+  ganadores.forEach(g => {
+    const key = normalizar(g.agente);
+    premiosPorAgente[key] = (premiosPorAgente[key]||0) + 1;
+  });
+  const agentesExcluidosNorm = AGENTES_EXCLUIDOS.map(normalizar);
+
+  const disponibles = entries.filter(e => {
+    const agenteNorm = normalizar(e.agente);
+    const clienteNorm = normalizar(e.nombre);
+    if(numerosGanadores.has(e.numero)) return false;
+    if(clientesGanadores.has(clienteNorm)) return false;
+    if(agentesExcluidosNorm.includes(agenteNorm)) return false;
+    if((premiosPorAgente[agenteNorm]||0) >= LIMITE_PREMIOS_POR_AGENTE) return false;
+    return true;
+  });
+
+  if(disponibles.length === 0){
+    toast('No quedan números elegibles para sortear (revisá las reglas de exclusión)');
+    return;
+  }
+
+  const premio = PREMIOS[ganadores.length];
+  const winner = disponibles[Math.floor(Math.random()*disponibles.length)];
+  ganadores.push({ premio, numero: winner.numero, nombre: winner.nombre, agente: winner.agente });
+
+  document.getElementById('modalPremioLabel').textContent = `🎉 Ganador #${premio.orden} — ${formatoMonto(premio.monto)}`;
+  document.getElementById('winnerNum').textContent = '#' + pad(winner.numero);
+  document.getElementById('winnerName').textContent = winner.nombre;
+  document.getElementById('winnerMeta').textContent = 'agente: ' + winner.agente + ' · ' + winner.fecha + ' ' + winner.hora;
+  document.getElementById('modalBg').classList.add('show');
+
+  actualizarPanelPremios();
+});
+
+document.getElementById('closeModal').addEventListener('click', ()=>{
+  document.getElementById('modalBg').classList.remove('show');
+});
+
+document.getElementById('exportBtn').addEventListener('click', async ()=>{
+  if(new Date() < DRAW_TIME) return;
+
+  const btn = document.getElementById('exportBtn');
+  btn.setAttribute('data-loading','1');
+  const textoOriginal = btn.textContent;
+  if(!entriesFull) btn.textContent = 'Cargando...';
+
+  let entries;
+  try{
+    entries = await cargarDatosCompletos();
+  }catch(e){
+    console.error('Error al cargar datos completos:', e);
+    toast('No se pudo cargar la lista completa, intentá de nuevo');
+    btn.removeAttribute('data-loading');
+    btn.textContent = textoOriginal;
+    return;
+  }
+  btn.removeAttribute('data-loading');
+  btn.textContent = textoOriginal;
+
+  if(entries.length === 0){
+    toast('No hay datos para exportar');
+    return;
+  }
+  const header = 'Numero,Nombre,Agente,Fecha,Hora\n';
+  const rows = entries
+    .sort((a,b)=>a.numero-b.numero)
+    .map(e => [pad(e.numero), e.nombre, e.agente, e.fecha, e.hora]
+      .map(v => `"${(v||'').toString().replace(/"/g,'""')}"`).join(','))
+    .join('\n');
+  const blob = new Blob([header+rows], {type:'text/csv;charset=utf-8;'});
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url;
+  a.download = 'rifa_numeros.csv';
+  a.click();
+  URL.revokeObjectURL(url);
+  toast('CSV descargado');
+});
+
+// Carga inicial: liviana (stats + últimos 30), nunca la lista completa
+loadStats();
+loadRecent();
+updateLockStatus();
+</script>
+</body>
+</html>
