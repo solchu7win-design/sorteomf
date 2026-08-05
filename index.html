@@ -148,7 +148,8 @@
   .row{display:flex;gap:10px;}
   .row > *{flex:1;}
 
-  .search{margin-bottom:14px;}
+  .search{margin-bottom:6px;}
+  .search-hint{font-size:12px;color:rgba(20,20,20,0.5);margin-bottom:14px;}
 
   .ticket{
     display:flex;
@@ -270,6 +271,7 @@
   <div class="card">
     <h2>Números entregados</h2>
     <input type="text" class="search" id="searchBox" placeholder="Buscar por nombre, agente o número...">
+    <div class="search-hint" id="searchHint">Mostrando los últimos 30 números registrados.</div>
     <div id="ticketList"></div>
   </div>
 
@@ -312,8 +314,14 @@
 // ============================================
 const SCRIPT_URL = 'https://script.google.com/macros/s/AKfycbyK9wRDDHR7NSSnIGqJKv0gm3TeAKthgFtOswgG5QPTY8-TenWhVPYbr34Ejv1F7Oo1yw/exec';
 
-let entries = [];
 const DRAW_TIME = new Date('2026-08-23T20:00:00');
+
+// Lista liviana que se muestra por defecto (últimos 30) o resultado de búsqueda.
+// Ya NO guardamos acá los miles de registros completos, para que la página no se trabe.
+let listaVisible = [];
+
+// Solo se llena una vez, al momento del sorteo o la exportación (ahí sí hace falta todo).
+let entriesFull = null;
 
 function setupHomeScreenIcon(){
   const canvas = document.createElement('canvas');
@@ -369,56 +377,77 @@ function toast(msg){
   setTimeout(()=>t.classList.remove('show'), 3500);
 }
 
-async function loadEntries(){
+function pad(n){ return String(n).padStart(4,'0'); }
+
+function escapeHtml(str){
+  const div = document.createElement('div');
+  div.textContent = str || '';
+  return div.innerHTML;
+}
+
+// ---- Liviano: solo el conteo, no descarga todos los registros ----
+async function loadStats(){
   try{
-    const res = await fetch(SCRIPT_URL + '?action=list');
+    const res = await fetch(SCRIPT_URL + '?action=stats');
     const data = await res.json();
-    entries = data.map(e => ({...e, numero: Number(e.numero)}));
-    render();
+    document.getElementById('statTotal').textContent = data.total ?? 0;
+    document.getElementById('statPersonas').textContent = data.hoy ?? 0;
   }catch(e){
-    console.error('Error al leer:', e);
+    console.error('Error al leer stats:', e);
+  }
+  const now = new Date();
+  const days = Math.max(0, Math.ceil((DRAW_TIME-now)/(1000*60*60*24)));
+  document.getElementById('statDias').textContent = days;
+}
+
+// ---- Liviano: solo los últimos 30 registrados ----
+async function loadRecent(){
+  try{
+    const res = await fetch(SCRIPT_URL + '?action=recent&limit=30');
+    const data = await res.json();
+    listaVisible = data.map(e => ({...e, numero: Number(e.numero)}));
+    document.getElementById('searchHint').textContent = 'Mostrando los últimos 30 números registrados.';
+    renderLista();
+  }catch(e){
+    console.error('Error al leer recientes:', e);
     toast('No se pudo actualizar la lista, reintentando...');
   }
 }
 
-// Refresco automático espaciado a 25 segundos (antes 5s) para reducir la carga
-// sobre el script cuando hay muchos agentes conectados a la vez
-let refrescoAutomatico = setInterval(async ()=>{
-  const q = document.getElementById('searchBox');
-  if(document.activeElement === q) return;
-  await loadEntries();
-}, 25000);
-
-setInterval(updateLockStatus, 30000);
-
-function pad(n){ return String(n).padStart(4,'0'); }
-
-// Arma la fecha de "hoy" en el mismo formato dd/MM/yyyy que usa el script de Google (GMT-4),
-// para evitar el desfase que causaba que "números hoy" siempre marcara 0
-function fechaHoyServidor(){
-  const now = new Date();
-  const offsetMin = now.getTimezoneOffset();
-  const gmt4Min = 4 * 60;
-  const ajustada = new Date(now.getTime() + (offsetMin - gmt4Min) * 60000);
-  const d = String(ajustada.getDate()).padStart(2,'0');
-  const m = String(ajustada.getMonth()+1).padStart(2,'0');
-  const y = ajustada.getFullYear();
-  return `${d}/${m}/${y}`;
+// ---- Búsqueda: se resuelve en el servidor, no descarga todo el historial ----
+async function searchRemote(q){
+  try{
+    const res = await fetch(SCRIPT_URL + '?action=search&q=' + encodeURIComponent(q));
+    const data = await res.json();
+    listaVisible = data.map(e => ({...e, numero: Number(e.numero)}));
+    document.getElementById('searchHint').textContent = listaVisible.length >= 30
+      ? 'Mostrando las primeras 30 coincidencias. Escribí más letras para acotar.'
+      : `${listaVisible.length} coincidencia(s) encontrada(s).`;
+    renderLista();
+  }catch(e){
+    console.error('Error al buscar:', e);
+    toast('No se pudo completar la búsqueda');
+  }
 }
 
-// Agrupa todas las entradas por fecha para el historial por día
-function historialPorDia(){
-  const grupos = {};
-  entries.forEach(e=>{
-    grupos[e.fecha] = (grupos[e.fecha]||0) + 1;
-  });
-  return Object.entries(grupos)
-    .map(([fecha, cantidad]) => ({fecha, cantidad}))
-    .sort((a,b)=>{
-      const [da,ma,ya] = a.fecha.split('/').map(Number);
-      const [db,mb,yb] = b.fecha.split('/').map(Number);
-      return new Date(yb,mb-1,db) - new Date(ya,ma-1,da);
-    });
+function renderLista(){
+  const list = document.getElementById('ticketList');
+  if(listaVisible.length === 0){
+    const q = document.getElementById('searchBox').value.trim();
+    list.innerHTML = q
+      ? '<div class="empty">No se encontraron números que coincidan con "' + escapeHtml(q) + '".</div>'
+      : '<div class="empty">Todavía no hay números registrados. Agrega el primero arriba.</div>';
+    return;
+  }
+  list.innerHTML = listaVisible.map(e => `
+    <div class="ticket">
+      <div class="num">#${pad(e.numero)}</div>
+      <div class="info">
+        <div class="name">${escapeHtml(String(e.nombre))}</div>
+        <div class="meta">agente: ${escapeHtml(String(e.agente || '—'))} · ${e.fecha} ${e.hora}</div>
+      </div>
+    </div>
+  `).join('');
 }
 
 function updateLockStatus(){
@@ -456,51 +485,18 @@ function updateLockStatus(){
   }
 }
 
-function render(){
-  const q = document.getElementById('searchBox').value.trim().toLowerCase();
-  const list = document.getElementById('ticketList');
-  const allMatches = entries.filter(e =>
-    !q || String(e.nombre||'').toLowerCase().includes(q) || String(e.agente||'').toLowerCase().includes(q) || pad(e.numero).includes(q)
-  ).sort((a,b)=>b.numero-a.numero);
-
-  // Limita cuántas tarjetas se dibujan a la vez para que no se vuelva lento con miles de registros
-  const LIMITE = 30;
-  const filtered = allMatches.slice(0, LIMITE);
-  const hayMas = allMatches.length > LIMITE;
-
-  if(filtered.length === 0){
-    list.innerHTML = q
-      ? '<div class="empty">No se encontraron números que coincidan con "' + escapeHtml(q) + '".</div>'
-      : '<div class="empty">Todavía no hay números registrados. Agrega el primero arriba.</div>';
-  } else {
-    list.innerHTML = filtered.map(e => `
-      <div class="ticket">
-        <div class="num">#${pad(e.numero)}</div>
-        <div class="info">
-          <div class="name">${escapeHtml(String(e.nombre))}</div>
-          <div class="meta">agente: ${escapeHtml(String(e.agente || '—'))} · ${e.fecha} ${e.hora}</div>
-        </div>
-      </div>
-    `).join('') + (hayMas ? `<div class="empty" style="padding:14px 10px;">Mostrando ${LIMITE} de ${allMatches.length} coincidencias. Escribe más letras para acotar la búsqueda.</div>` : '');
+// Refresco automático cada 25 segundos: solo pide stats + últimos 30 (liviano),
+// nunca la lista completa. Se detiene solo cuando el registro cierra.
+let refrescoAutomatico = setInterval(async ()=>{
+  const q = document.getElementById('searchBox');
+  if(document.activeElement === q) return; // no interrumpir mientras escribe
+  await loadStats();
+  if(q.value.trim() === ''){
+    await loadRecent();
   }
+}, 25000);
 
-  document.getElementById('statTotal').textContent = entries.length;
-  const today = fechaHoyServidor();
-  const todayCount = entries.filter(e=>e.fecha===today).length;
-  document.getElementById('statPersonas').textContent = todayCount;
-
-  const now = new Date();
-  const days = Math.max(0, Math.ceil((DRAW_TIME-now)/(1000*60*60*24)));
-  document.getElementById('statDias').textContent = days;
-
-  updateLockStatus();
-}
-
-function escapeHtml(str){
-  const div = document.createElement('div');
-  div.textContent = str || '';
-  return div.innerHTML;
-}
+setInterval(updateLockStatus, 30000);
 
 document.getElementById('entryForm').addEventListener('submit', async (ev)=>{
   ev.preventDefault();
@@ -527,7 +523,10 @@ document.getElementById('entryForm').addEventListener('submit', async (ev)=>{
       toast('Número #' + pad(nuevo.numero) + ' asignado a ' + name);
       document.getElementById('entryForm').reset();
       document.getElementById('fName').focus();
-      await loadEntries();
+      await loadStats();
+      if(document.getElementById('searchBox').value.trim() === ''){
+        await loadRecent();
+      }
     }
   }catch(e){
     console.error('Error al guardar:', e);
@@ -541,19 +540,37 @@ document.getElementById('entryForm').addEventListener('submit', async (ev)=>{
 let searchDebounce;
 document.getElementById('searchBox').addEventListener('input', ()=>{
   clearTimeout(searchDebounce);
-  searchDebounce = setTimeout(render, 200);
+  const q = document.getElementById('searchBox').value.trim();
+  searchDebounce = setTimeout(async ()=>{
+    if(q === ''){
+      document.getElementById('searchHint').textContent = 'Mostrando los últimos 30 números registrados.';
+      await loadRecent();
+    } else {
+      await searchRemote(q);
+    }
+  }, 350);
 });
 
-document.getElementById('toggleHistorial').addEventListener('click', ()=>{
+document.getElementById('toggleHistorial').addEventListener('click', async ()=>{
   const box = document.getElementById('historialList');
   const btn = document.getElementById('toggleHistorial');
   const abierto = box.style.display !== 'none';
   if(abierto){
     box.style.display = 'none';
     btn.textContent = 'Ver números entregados por día (última semana)';
-  } else {
+    return;
+  }
+
+  btn.textContent = 'Cargando...';
+  try{
+    const res = await fetch(SCRIPT_URL + '?action=historial');
+    const todos = await res.json();
+    todos.sort((a,b)=>{
+      const [da,ma,ya] = a.fecha.split('/').map(Number);
+      const [db,mb,yb] = b.fecha.split('/').map(Number);
+      return new Date(yb,mb-1,db) - new Date(ya,ma-1,da);
+    });
     const DIAS_A_MOSTRAR = 7;
-    const todos = historialPorDia();
     const dias = todos.slice(0, DIAS_A_MOSTRAR);
     const hayMasDias = todos.length > DIAS_A_MOSTRAR;
 
@@ -571,519 +588,16 @@ document.getElementById('toggleHistorial').addEventListener('click', ()=>{
     }
     box.style.display = 'block';
     btn.textContent = 'Ocultar historial';
-  }
-});
-
-// ============================================
-// SISTEMA DE SORTEO — 14 premios en orden
-// ============================================
-const PREMIOS = [
-  {orden: 1,  monto: 100000},
-  {orden: 2,  monto: 100000},
-  {orden: 3,  monto: 100000},
-  {orden: 4,  monto: 100000},
-  {orden: 5,  monto: 100000},
-  {orden: 6,  monto: 100000},
-  {orden: 7,  monto: 100000},
-  {orden: 8,  monto: 100000},
-  {orden: 9,  monto: 100000},
-  {orden: 10, monto: 100000},
-  {orden: 11, monto: 200000},
-  {orden: 12, monto: 300000},
-  {orden: 13, monto: 500000},
-  {orden: 14, monto: 1000000},
-];
-
-// Agentes que NO deben poder ganar (por ejemplo, ya no trabajan en el equipo).
-// Escribí el nombre exactamente como aparece en los registros. Podés agregar más separados por coma.
-const AGENTES_EXCLUIDOS = ['Guerreras'];
-
-// Cuántos premios como máximo puede entregar un mismo agente en total
-const LIMITE_PREMIOS_POR_AGENTE = 2;
-
-let ganadores = []; // { premio, numero, nombre, agente }
-
-function normalizar(texto){
-  return String(texto||'').trim().toLowerCase();
-}
-
-function formatoMonto(n){
-  return '$' + n.toLocale  form{display:flex;flex-direction:column;gap:12px;}
-  label{font-size:12px;font-weight:600;color:rgba(20,20,20,0.7);margin-bottom:4px;display:block;}
-  input, select{
-    width:100%;
-    padding:11px 12px;
-    border:1.5px solid var(--line);
-    border-radius:8px;
-    font-family:'Inter',sans-serif;
-    font-size:15px;
-    background:#fff;
-    color:var(--ink);
-  }
-  input:focus, select:focus{outline:none;border-color:var(--red);}
-  .btn{
-    font-family:'Space Mono',monospace;
-    font-size:14px;
-    letter-spacing:0.04em;
-    padding:13px 18px;
-    border-radius:8px;
-    border:none;
-    cursor:pointer;
-    text-transform:uppercase;
-    transition:transform 0.08s ease, opacity 0.15s ease;
-  }
-  .btn:active{transform:scale(0.98);}
-  .btn-primary{background:var(--black);color:var(--white);}
-  .btn-primary:hover{background:var(--black-soft);}
-  .btn-red{background:var(--red);color:var(--white);}
-  .btn-red:hover{background:var(--red-light);}
-  .btn-ghost{background:transparent;color:var(--red);border:1.5px solid var(--red);}
-  .btn-ghost:hover{background:rgba(208,16,42,0.08);}
-  .btn:disabled{
-    opacity:0.4;
-    cursor:not-allowed;
-    background:#ccc;
-    color:#777;
-    border-color:#ccc;
-  }
-  .row{display:flex;gap:10px;}
-  .row > *{flex:1;}
-
-  .search{margin-bottom:14px;}
-
-  .ticket{
-    display:flex;
-    align-items:center;
-    background:#fff;
-    border:1.5px dashed var(--line);
-    border-radius:8px;
-    padding:12px 14px;
-    margin-bottom:8px;
-    gap:12px;
-  }
-  .ticket .num{
-    font-family:'Space Mono',monospace;
-    font-weight:700;
-    font-size:18px;
-    color:var(--red);
-    min-width:56px;
-  }
-  .ticket .info{flex:1;min-width:0;}
-  .ticket .name{font-weight:600;font-size:14px;}
-  .ticket .meta{font-size:12px;color:rgba(20,20,20,0.55);}
-
-  .empty{
-    text-align:center;
-    padding:30px 10px;
-    color:rgba(20,20,20,0.45);
-    font-size:14px;
-  }
-
-  .lock-msg{
-    font-size:13px;
-    color:rgba(20,20,20,0.6);
-    background:var(--off-white);
-    border:1px dashed var(--line);
-    border-radius:8px;
-    padding:12px;
-    margin-top:12px;
-    text-align:center;
-  }
-  .lock-msg strong{color:var(--red);}
-
-  .modal-bg{
-    display:none;
-    position:fixed;inset:0;
-    background:rgba(10,10,10,0.88);
-    align-items:center;justify-content:center;
-    z-index:50;
-    padding:20px;
-  }
-  .modal-bg.show{display:flex;}
-  .modal{
-    background:var(--white);
-    color:var(--ink);
-    border-radius:14px;
-    padding:32px 24px;
-    text-align:center;
-    max-width:340px;
-    width:100%;
-    box-shadow:0 20px 50px rgba(0,0,0,0.6);
-    border-top:6px solid var(--red);
-  }
-  .modal .eyebrow{color:var(--red);}
-  .modal .winner-num{
-    font-family:'Space Mono',monospace;
-    font-size:48px;
-    font-weight:700;
-    color:var(--black);
-    margin:10px 0;
-  }
-  .modal .winner-name{font-size:18px;font-weight:600;margin-bottom:4px;}
-  .modal .winner-meta{font-size:13px;color:rgba(20,20,20,0.6);margin-bottom:20px;}
-
-  #toast{
-    position:fixed;bottom:20px;left:50%;transform:translateX(-50%) translateY(20px);
-    background:var(--black-soft);color:var(--white);
-    border:1px solid var(--red);
-    padding:11px 18px;border-radius:8px;font-size:13px;
-    opacity:0;transition:all 0.25s ease;pointer-events:none;
-    font-family:'Space Mono',monospace;
-    z-index:60;
-    box-shadow:0 8px 20px rgba(0,0,0,0.4);
-    max-width:90vw;
-    text-align:center;
-  }
-  #toast.show{opacity:1;transform:translateX(-50%) translateY(0);}
-
-  .btn[data-loading="1"]{opacity:0.6;pointer-events:none;}
-</style>
-</head>
-<body>
-<div class="wrap">
-  <header>
-    <div class="eyebrow">Control interno &middot; no público</div>
-    <h1>SORTEO ANIVERSARIO<br><span class="brand">MADAFAKER'S TEAM</span></h1>
-    <div class="sub">Carga superior a $3,000 = un ticket. Sorteo el 23 de agosto, 8:00 p.m.</div>
-    <div class="stats">
-      <div class="stat"><div class="num" id="statTotal">0</div><div class="label">Números dados</div></div>
-      <div class="stat"><div class="num" id="statPersonas">0</div><div class="label">Números hoy</div></div>
-      <div class="stat"><div class="num" id="statDias">--</div><div class="label">Días para el sorteo</div></div>
-    </div>
-  </header>
-
-  <div class="card">
-    <h2>Registrar número</h2>
-    <form id="entryForm">
-      <div>
-        <label for="fName">Nombre de usuario</label>
-        <input type="text" id="fName" required placeholder="Ej: María Gómez">
-      </div>
-      <div>
-        <label for="fStaff">Nombre de agente</label>
-        <input type="text" id="fStaff" required placeholder="Nombre de quien entrega el número">
-      </div>
-      <button type="submit" class="btn btn-red" id="submitBtn">Asignar siguiente número</button>
-    </form>
-  </div>
-
-  <div class="card">
-    <h2>Números entregados</h2>
-    <input type="text" class="search" id="searchBox" placeholder="Buscar por nombre o número...">
-    <div id="ticketList"></div>
-  </div>
-
-  <div class="card">
-    <h2>Historial por día</h2>
-    <button class="btn btn-ghost" id="toggleHistorial" style="width:100%;margin-bottom:6px;">Ver cuántos números se dieron cada día</button>
-    <div id="historialList" style="display:none;"></div>
-  </div>
-
-  <div class="card">
-    <h2>Sorteo</h2>
-    <p style="font-size:13px;color:rgba(20,20,20,0.6);margin-top:-6px;">
-      El sorteo y la exportación de datos se habilitan automáticamente el 23 de agosto a las 8:00 p.m., cuando cierra el conteo.
-    </p>
-    <div class="row">
-      <button class="btn btn-primary" id="drawBtn">Realizar sorteo</button>
-      <button class="btn btn-ghost" id="exportBtn">Exportar CSV</button>
-    </div>
-    <div class="lock-msg" id="lockMsg"></div>
-  </div>
-</div>
-
-<div class="modal-bg" id="modalBg">
-  <div class="modal">
-    <div class="eyebrow">🎉 Número ganador</div>
-    <div class="winner-num" id="winnerNum">--</div>
-    <div class="winner-name" id="winnerName">--</div>
-    <div class="winner-meta" id="winnerMeta">--</div>
-    <button class="btn btn-primary" id="closeModal" style="width:100%;">Cerrar</button>
-  </div>
-</div>
-
-<div id="toast"></div>
-
-<script>
-// ============================================
-// CONFIGURACIÓN: pega acá tu URL de Apps Script
-// ============================================
-const SCRIPT_URL = 'https://script.google.com/macros/s/AKfycbyK9wRDDHR7NSSnIGqJKv0gm3TeAKthgFtOswgG5QPTY8-TenWhVPYbr34Ejv1F7Oo1yw/exec';
-
-let entries = [];
-const DRAW_TIME = new Date('2026-08-23T20:00:00');
-
-function setupHomeScreenIcon(){
-  const canvas = document.createElement('canvas');
-  canvas.width = 512;
-  canvas.height = 512;
-  const ctx = canvas.getContext('2d');
-
-  ctx.fillStyle = '#0A0A0A';
-  ctx.fillRect(0, 0, 512, 512);
-
-  ctx.beginPath();
-  ctx.arc(256, 256, 190, 0, Math.PI * 2);
-  ctx.fillStyle = '#D0102A';
-  ctx.fill();
-
-  ctx.beginPath();
-  ctx.arc(256, 256, 160, 0, Math.PI * 2);
-  ctx.fillStyle = '#0A0A0A';
-  ctx.fill();
-
-  ctx.fillStyle = '#FFFFFF';
-  ctx.font = '900 220px Arial, sans-serif';
-  ctx.textAlign = 'center';
-  ctx.textBaseline = 'middle';
-  ctx.fillText('M', 256, 278);
-
-  const dataUrl = canvas.toDataURL('image/png');
-
-  document.getElementById('faviconLink').href = dataUrl;
-  document.getElementById('appleIconLink').href = dataUrl;
-
-  const manifest = {
-    name: "Sorteo Aniversario Madafaker's Team",
-    short_name: "Sorteo MFT",
-    start_url: ".",
-    display: "standalone",
-    background_color: "#0A0A0A",
-    theme_color: "#0A0A0A",
-    icons: [
-      { src: dataUrl, sizes: "512x512", type: "image/png" },
-      { src: dataUrl, sizes: "192x192", type: "image/png" }
-    ]
-  };
-  const manifestBlob = new Blob([JSON.stringify(manifest)], {type: 'application/manifest+json'});
-  document.getElementById('manifestLink').href = URL.createObjectURL(manifestBlob);
-}
-setupHomeScreenIcon();
-
-function toast(msg){
-  const t = document.getElementById('toast');
-  t.textContent = msg;
-  t.classList.add('show');
-  setTimeout(()=>t.classList.remove('show'), 3500);
-}
-
-async function loadEntries(){
-  try{
-    const res = await fetch(SCRIPT_URL + '?action=list');
-    const data = await res.json();
-    entries = data.map(e => ({...e, numero: Number(e.numero)}));
-    render();
   }catch(e){
-    console.error('Error al leer:', e);
-    toast('No se pudo actualizar la lista, reintentando...');
-  }
-}
-
-setInterval(async ()=>{
-  const q = document.getElementById('searchBox');
-  if(document.activeElement === q) return;
-  await loadEntries();
-}, 5000);
-
-setInterval(updateLockStatus, 30000);
-
-function pad(n){ return String(n).padStart(4,'0'); }
-
-// Arma la fecha de "hoy" en el mismo formato dd/MM/yyyy que usa el script de Google (GMT-4),
-// para evitar el desfase que causaba que "números hoy" siempre marcara 0
-function fechaHoyServidor(){
-  const now = new Date();
-  const offsetMin = now.getTimezoneOffset(); // minutos respecto a UTC en el dispositivo
-  const gmt4Min = 4 * 60;
-  const ajustada = new Date(now.getTime() + (offsetMin - gmt4Min) * 60000);
-  const d = String(ajustada.getDate()).padStart(2,'0');
-  const m = String(ajustada.getMonth()+1).padStart(2,'0');
-  const y = ajustada.getFullYear();
-  return `${d}/${m}/${y}`;
-}
-
-// Agrupa todas las entradas por fecha para el historial por día
-function historialPorDia(){
-  const grupos = {};
-  entries.forEach(e=>{
-    grupos[e.fecha] = (grupos[e.fecha]||0) + 1;
-  });
-  return Object.entries(grupos)
-    .map(([fecha, cantidad]) => ({fecha, cantidad}))
-    .sort((a,b)=>{
-      const [da,ma,ya] = a.fecha.split('/').map(Number);
-      const [db,mb,yb] = b.fecha.split('/').map(Number);
-      return new Date(yb,mb-1,db) - new Date(ya,ma-1,da);
-    });
-}
-
-function updateLockStatus(){
-  const now = new Date();
-  const drawBtn = document.getElementById('drawBtn');
-  const exportBtn = document.getElementById('exportBtn');
-  const lockMsg = document.getElementById('lockMsg');
-
-  if(now < DRAW_TIME){
-    drawBtn.disabled = true;
-    exportBtn.disabled = true;
-    lockMsg.innerHTML = 'Se habilita el <strong>23 de agosto a las 8:00 p.m.</strong>, cuando cierra el conteo.';
-  } else {
-    drawBtn.disabled = false;
-    exportBtn.disabled = false;
-    lockMsg.innerHTML = '<strong>El conteo cerró.</strong> Ya puedes realizar el sorteo y exportar los datos.';
-  }
-}
-
-function render(){
-  const q = document.getElementById('searchBox').value.trim().toLowerCase();
-  const list = document.getElementById('ticketList');
-  const allMatches = entries.filter(e =>
-    !q || String(e.nombre||'').toLowerCase().includes(q) || String(e.agente||'').toLowerCase().includes(q) || pad(e.numero).includes(q)
-  ).sort((a,b)=>b.numero-a.numero);
-
-  // Limita cuántas tarjetas se dibujan a la vez para que no se vuelva lento con miles de registros
-  const LIMITE = 30;
-  const filtered = allMatches.slice(0, LIMITE);
-  const hayMas = allMatches.length > LIMITE;
-
-  if(filtered.length === 0){
-    list.innerHTML = q
-      ? '<div class="empty">No se encontraron números que coincidan con "' + escapeHtml(q) + '".</div>'
-      : '<div class="empty">Todavía no hay números registrados. Agrega el primero arriba.</div>';
-  } else {
-    list.innerHTML = filtered.map(e => `
-      <div class="ticket">
-        <div class="num">#${pad(e.numero)}</div>
-        <div class="info">
-          <div class="name">${escapeHtml(String(e.nombre))}</div>
-          <div class="meta">agente: ${escapeHtml(String(e.agente || '—'))} · ${e.fecha} ${e.hora}</div>
-        </div>
-      </div>
-    `).join('') + (hayMas ? `<div class="empty" style="padding:14px 10px;">Mostrando ${LIMITE} de ${allMatches.length} coincidencias. Escribe más letras para acotar la búsqueda.</div>` : '');
-  }
-
-  document.getElementById('statTotal').textContent = entries.length;
-  const today = fechaHoyServidor();
-  const todayCount = entries.filter(e=>e.fecha===today).length;
-  document.getElementById('statPersonas').textContent = todayCount;
-
-  const now = new Date();
-  const days = Math.max(0, Math.ceil((DRAW_TIME-now)/(1000*60*60*24)));
-  document.getElementById('statDias').textContent = days;
-
-  updateLockStatus();
-}
-
-function escapeHtml(str){
-  const div = document.createElement('div');
-  div.textContent = str || '';
-  return div.innerHTML;
-}
-
-document.getElementById('entryForm').addEventListener('submit', async (ev)=>{
-  ev.preventDefault();
-  const name = document.getElementById('fName').value.trim();
-  const staff = document.getElementById('fStaff').value.trim();
-  if(!name || !staff) return;
-
-  const btn = document.getElementById('submitBtn');
-  btn.setAttribute('data-loading','1');
-  btn.textContent = 'Guardando...';
-
-  try{
-    const params = new URLSearchParams({ action: 'add', nombre: name, agente: staff });
-    const res = await fetch(SCRIPT_URL + '?' + params.toString());
-    const nuevo = await res.json();
-
-    if(nuevo.error){
-      toast('Error: ' + nuevo.error);
-    } else {
-      toast('Número #' + pad(nuevo.numero) + ' asignado a ' + name);
-      document.getElementById('entryForm').reset();
-      document.getElementById('fName').focus();
-      await loadEntries();
-    }
-  }catch(e){
-    console.error('Error al guardar:', e);
-    toast('Error al guardar: ' + (e.message || 'sin conexión'));
-  }finally{
-    btn.removeAttribute('data-loading');
-    btn.textContent = 'Asignar siguiente número';
+    console.error('Error al leer historial:', e);
+    toast('No se pudo cargar el historial');
+    btn.textContent = 'Ver números entregados por día (última semana)';
   }
 });
 
-let searchDebounce;
-document.getElementById('searchBox').addEventListener('input', ()=>{
-  clearTimeout(searchDebounce);
-  searchDebounce = setTimeout(render, 200);
-});
-
-document.getElementById('toggleHistorial').addEventListener('click', ()=>{
-  const box = document.getElementById('historialList');
-  const btn = document.getElementById('toggleHistorial');
-  const abierto = box.style.display !== 'none';
-  if(abierto){
-    box.style.display = 'none';
-    btn.textContent = 'Ver cuántos números se dieron cada día';
-  } else {
-    const dias = historialPorDia();
-    if(dias.length === 0){
-      box.innerHTML = '<div class="empty">Todavía no hay datos.</div>';
-    } else {
-      box.innerHTML = dias.map(d => `
-        <div class="ticket">
-          <div class="num" style="min-width:auto;font-size:14px;">${escapeHtml(d.fecha)}</div>
-          <div class="info">
-            <div class="name">${d.cantidad} número${d.cantidad===1?'':'s'} entregado${d.cantidad===1?'':'s'}</div>
-          </div>
-        </div>
-      `).join('');
-    }
-    box.style.display = 'block';
-    btn.textContent = 'Ocultar historial';
-  }
-});
-
-document.getElementById('drawBtn').addEventListener('click', ()=>{
-  if(new Date() < DRAW_TIME) return;
-  if(entries.length === 0){
-    toast('Todavía no hay números para sortear');
-    return;
-  }
-  const winner = entries[Math.floor(Math.random()*entries.length)];
-  document.getElementById('winnerNum').textContent = '#' + pad(winner.numero);
-  document.getElementById('winnerName').textContent = winner.nombre;
-  document.getElementById('winnerMeta').textContent = 'agente: ' + winner.agente + ' · ' + winner.fecha + ' ' + winner.hora;
-  document.getElementById('modalBg').classList.add('show');
-});
-
-document.getElementById('closeModal').addEventListener('click', ()=>{
-  document.getElementById('modalBg').classList.remove('show');
-});
-
-document.getElementById('exportBtn').addEventListener('click', ()=>{
-  if(new Date() < DRAW_TIME) return;
-  if(entries.length === 0){
-    toast('No hay datos para exportar');
-    return;
-  }
-  const header = 'Numero,Nombre,Agente,Fecha,Hora\n';
-  const rows = entries
-    .sort((a,b)=>a.numero-b.numero)
-    .map(e => [pad(e.numero), e.nombre, e.agente, e.fecha, e.hora]
-      .map(v => `"${(v||'').toString().replace(/"/g,'""')}"`).join(','))
-    .join('\n');
-  const blob = new Blob([header+rows], {type:'text/csv;charset=utf-8;'});
-  const url = URL.createObjectURL(blob);
-  const a = document.createElement('a');
-  a.href = url;
-  a.download = 'rifa_numeros.csv';
-  a.click();
-  URL.revokeObjectURL(url);
-  toast('CSV descargado');
-});
-
-loadEntries();
-</script>
-</body>
-</html>
+// Trae la lista COMPLETA una sola vez (pesado). Se usa solo para el sorteo y la exportación,
+// nunca en el refresco automático de todos los días.
+async function cargarDatosCompletos(){
+  if(entriesFull) return entriesFull;
+  toast('Cargando todos los números, puede tardar unos segundos...');
+  const res = awa
